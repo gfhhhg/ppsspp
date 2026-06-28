@@ -46,27 +46,9 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
-        
-      #- name: Setup SDK # gradlew will install SDK automatically, thus this step not needed
-      #  uses: android-actions/setup-android@v3
-          
-      #- name: Setup NDK # gradle will install NDK (side by side) automatically, thus explictly seting up NDK here will cause not enough storage issue when building debug variant
-      #  uses: nttld/setup-ndk@v1
-      #  with:
-      #    ndk-version: r21e
 
-      - name: Test androidGitVersion
-        working-directory: android
-        run: |
-          echo "count=${{steps.valid-tags.outputs.count}}"
-          ../gradlew --quiet androidGitVersion
-      
       - name: Assemble APK
-        working-directory: android
-        run: ../gradlew assemble${{ github.event.inputs.buildVariant }} --stacktrace
-      
-      #- name: Gradle Test
-      #  run: bash ./gradlew test${{ github.event.inputs.buildVariant }}UnitTest --stacktrace
+        run: ./gradlew assemble${{ github.event.inputs.buildVariant }} --stacktrace
       
       - name: Package build
         run: |

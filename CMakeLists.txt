@@ -1672,6 +1672,8 @@ list(APPEND NativeAppSource
 	UI/JitCompareScreen.cpp
 	UI/MemStickScreen.h
 	UI/MemStickScreen.cpp
+	UI/MemorySearchScreen.h
+	UI/MemorySearchScreen.cpp
 	UI/ProfilerDraw.h
 	UI/ProfilerDraw.cpp
 	UI/CustomButtonMappingScreen.h
@@ -2516,6 +2518,8 @@ add_library(${CoreLibName} ${CoreLinkType}
 	Core/MemFault.h
 	Core/MemMap.cpp
 	Core/MemMap.h
+	Core/MemorySearch.cpp
+	Core/MemorySearch.h
 	Core/MemMapFunctions.cpp
 	Core/MemMapHelpers.h
 	Core/PSPLoaders.cpp

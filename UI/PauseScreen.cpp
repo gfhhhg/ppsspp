@@ -64,6 +64,7 @@
 #include "UI/CwCheatScreen.h"
 #include "UI/MainScreen.h"
 #include "UI/GameScreen.h"
+#include "UI/MemorySearchScreen.h"
 #include "UI/OnScreenDisplay.h"
 #include "UI/GameInfoCache.h"
 #include "UI/DisplayLayoutScreen.h"
@@ -705,6 +706,11 @@ void GamePauseScreen::CreateViews() {
 	if (g_Config.bEnableCheats && PSP_CoreParameter().fileType != IdentifiedFileType::PPSSPP_GE_DUMP) {
 		rightColumnItems->Add(new Choice(pa->T("Cheats"), ImageID("I_CHEAT")))->OnClick.Add([this](UI::EventParams &e) {
 			screenManager()->push(new CwCheatScreen(gamePath_));
+		});
+
+		auto ms = GetI18NCategory(I18NCat::MEMORY_SEARCH);
+		rightColumnItems->Add(new Choice(ms->T("MemorySearch", "Memory Search"), ImageID("I_SEARCH")))->OnClick.Add([this](UI::EventParams &e) {
+			screenManager()->push(new MemorySearchScreen(gamePath_));
 		});
 	}
 

@@ -54,7 +54,7 @@ std::unique_ptr<MemorySearchEngine> MemorySearchScreen::s_sharedEngine;
 Path MemorySearchScreen::s_lastGamePath;
 int MemorySearchScreen::s_searchTypeIndex = 2;
 int MemorySearchScreen::s_compareTypeIndex = 0;
-int MemorySearchScreen::s_regionIndex = 3;
+int MemorySearchScreen::s_regionIndex = 0;
 bool MemorySearchScreen::s_alignedSearch = false;
 int64_t MemorySearchScreen::s_searchValue = 0;
 int64_t MemorySearchScreen::s_searchValue2 = 0;
@@ -66,7 +66,7 @@ MemorySearchScreen::MemorySearchScreen(const Path &gamePath)
 		s_lastGamePath = gamePath;
 		s_searchTypeIndex = 1;
 		s_compareTypeIndex = 0;
-		s_regionIndex = 3;
+		s_regionIndex = 0;
 		s_alignedSearch = false;
 		s_searchValue = 0;
 		s_searchValue2 = 0;
@@ -320,7 +320,7 @@ void MemorySearchScreen::OnFirstSearch(UI::EventParams &e) {
 	searchInProgress_.store(true);
 	firstSearchButton_->SetEnabled(false);
 	nextSearchButton_->SetEnabled(false);
-	searchingText_->SetText("Searching...");
+	searchingText_->SetText(T(I18NCat::MEMORY_SEARCH, "Searching", "Searching..."));
 	searchingText_->SetVisibility(UI::V_VISIBLE);
 	pendingIsFirstSearch_ = true;
 	
@@ -341,7 +341,7 @@ void MemorySearchScreen::OnNextSearch(UI::EventParams &e) {
 	searchInProgress_.store(true);
 	firstSearchButton_->SetEnabled(false);
 	nextSearchButton_->SetEnabled(false);
-	searchingText_->SetText("Searching...");
+	searchingText_->SetText(T(I18NCat::MEMORY_SEARCH, "Searching", "Searching..."));
 	searchingText_->SetVisibility(UI::V_VISIBLE);
 	pendingIsFirstSearch_ = false;
 	
@@ -361,7 +361,7 @@ void MemorySearchScreen::OnClearResults(UI::EventParams &e) {
 void MemorySearchScreen::OnReset(UI::EventParams &e) {
 	s_searchTypeIndex = 1;
 	s_compareTypeIndex = 0;
-	s_regionIndex = 3;
+	s_regionIndex = 0;
 	s_alignedSearch = false;
 	s_searchValue = 0;
 	s_searchValue2 = 0;
@@ -460,7 +460,7 @@ void MemorySearchScreen::UpdateResultsList() {
 	resultCountText_->SetText(StringFromFormat(std::string(ms->T("ResultsCount", "%zu results")).c_str(), resultCount));
 
 	if (searchEngine_->IsBitmapMode()) {
-		std::string msg = StringFromFormat("Too many results to display (%zu). Continue narrowing down your search to see individual results.", resultCount);
+		std::string msg = StringFromFormat(std::string(ms->T("TooManyResults", "Too many results to display (%zu). Continue narrowing down your search to see individual results.")).c_str(), resultCount);
 		resultsList_->Add(new TextView(msg));
 		return;
 	}

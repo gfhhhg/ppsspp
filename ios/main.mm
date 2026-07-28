@@ -710,3 +710,4 @@ int main(int argc, char *argv[]) {
 		return UIApplicationMain(argc, argv, NSStringFromClass([PPSSPPUIApplication class]), NSStringFromClass([AppDelegate class]));
 	}
 }
+

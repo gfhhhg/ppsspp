@@ -426,27 +426,4 @@ void VulkanRenderLoop(IOSVulkanContext *graphicsContext, CAMetalLayer *metalLaye
 /** Returns a Metal-compatible layer. */
 +(Class) layerClass { return [CAMetalLayer class]; }
 
-#pragma mark - UIKeyInput Protocol (forward keyboard input to the view controller)
-
-// PPSSPPMetalView is self.view of PPSSPPViewControllerMetal, so it becomes the
-// first responder when the VC calls becomeFirstResponder. The VC implements
-// UIKeyInput but UIViewController is not a UIResponder, so we need to forward
-// the keyboard protocol methods from this view to the VC (sharedViewController).
-
-- (BOOL)canBecomeFirstResponder { return YES; }
-
-- (BOOL)hasText {
-	return YES;
-}
-
-- (void)insertText:(NSString *)text {
-	NSLog(@"[PPSSPP] MetalView.insertText: called, text='%@'", text);
-	[(PPSSPPBaseViewController *)sharedViewController insertText:text];
-}
-
-- (void)deleteBackward {
-	NSLog(@"[PPSSPP] MetalView.deleteBackward called");
-	[(PPSSPPBaseViewController *)sharedViewController deleteBackward];
-}
-
 @end

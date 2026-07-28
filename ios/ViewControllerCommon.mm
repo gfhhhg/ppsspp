@@ -9,7 +9,6 @@
 #include "Common/System/NativeApp.h"
 #include "Common/System/Display.h"
 #include "Common/Log.h"
-#include "Common/Data/Encoding/Utf8.h"
 #include "Core/HLE/sceUsbCam.h"
 #include "Core/HLE/sceUsbGps.h"
 #include "Core/System.h"
@@ -418,7 +417,6 @@ extern float g_safeInsetBottom;
 // It's a bit limited but good enough.
 
 - (void)deleteBackward {
-	NSLog(@"[PPSSPP] deleteBackward called");
 	KeyInput input{};
 	input.deviceId = DEVICE_ID_KEYBOARD;
 	input.flags = KeyInputFlags::DOWN | KeyInputFlags::UP;
@@ -428,23 +426,9 @@ extern float g_safeInsetBottom;
 }
 
 - (void)insertText:(NSString *)text {
-	NSLog(@"[PPSSPP] insertText: called, text='%@', length=%lu", text, (unsigned long)text.length);
-	if (!text || text.length == 0) return;
-
-	// deleteBackward works with DOWN|UP + NKCODE_DEL. insertText: with CHAR-only doesn't.
-	// Both are UIKeyInput protocol methods called by iOS on the same responder, so insertText:
-	// IS being called — the CHAR-only path itself is the problem on iOS.
-	// Fix: send DOWN|UP|CHAR with a non-zero keyCode (like deleteBackward), carrying the
-	// unicode char in unicodeChar (union with keyCode). TextEdit::Key's DOWN branch hits
-	// default:break for normal chars (no-op), but its independent CHAR branch inserts the char.
-	for (NSUInteger i = 0; i < text.length; i++) {
-		unichar c = [text characterAtIndex:i];
-		KeyInput input{};
-		input.deviceId = DEVICE_ID_KEYBOARD;
-		input.flags = KeyInputFlags::DOWN | KeyInputFlags::UP | KeyInputFlags::CHAR;
-		input.unicodeChar = c;  // union with keyCode — gives a non-zero keyCode too
-		NativeKey(input);
-	}
+	std::string str([text UTF8String]);
+	INFO_LOG(Log::System, "Chars: %s", str.c_str());
+	SendKeyboardChars(str);
 }
 
 - (BOOL)hasText {
@@ -480,12 +464,9 @@ extern float g_safeInsetBottom;
 }
 
 // See PPSSPPUIApplication.mm for the other method
-// iOS 13+ 软键盘和硬键盘都走 pressesBegan:/pressesEnded: 而非 UIKeyInput。
-// 开源版原本用 #if PPSSPP_PLATFORM(IOS_APP_STORE) 包裹导致软键盘字符被丢弃，
-// deleteBackward 仍走 UIKeyInput 所以能工作，但字符输入不走 insertText:。
+#if PPSSPP_PLATFORM(IOS_APP_STORE)
 
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
-	NSLog(@"[PPSSPP] pressesBegan: called, presses.count=%lu", (unsigned long)presses.count);
 	KeyboardPressesBegan(presses, event);
 }
 
@@ -497,6 +478,7 @@ extern float g_safeInsetBottom;
 	KeyboardPressesEnded(presses, event);
 }
 
+#endif
 #pragma mark - Status Bar Control
 
 // iOS calls this to determine whether to hide the status bar

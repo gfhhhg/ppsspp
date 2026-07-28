@@ -418,6 +418,7 @@ extern float g_safeInsetBottom;
 // It's a bit limited but good enough.
 
 - (void)deleteBackward {
+	NSLog(@"[PPSSPP] deleteBackward called");
 	KeyInput input{};
 	input.deviceId = DEVICE_ID_KEYBOARD;
 	input.flags = KeyInputFlags::DOWN | KeyInputFlags::UP;
@@ -427,23 +428,21 @@ extern float g_safeInsetBottom;
 }
 
 - (void)insertText:(NSString *)text {
+	NSLog(@"[PPSSPP] insertText: called, text='%@', length=%lu", text, (unsigned long)text.length);
 	if (!text || text.length == 0) return;
 
-	// Key observation: deleteBackward works with DOWN|UP + keyCode=NKCODE_DEL.
-	// TextEdit::Key's CHAR branch (line 1502) checks: input.keyCode >= 0x20.
-	// No DOWN flag required, no keyCode != 0 check.
-	// The union means setting unicodeChar makes keyCode readable as the same value.
-	// So original SendKeyboardChars (CHAR + unicodeChar=codePoint) should work.
-	// 
-	// But it doesn't → means insertText: is probably NOT being called by iOS 16.
-	// The actual iOS 16 path for system keyboard chars is pressesBegan: / pressesEnded.
-	// So we must un-#if the pressesBegan: handler to receive key events.
+	// deleteBackward works with DOWN|UP + NKCODE_DEL. insertText: with CHAR-only doesn't.
+	// Both are UIKeyInput protocol methods called by iOS on the same responder, so insertText:
+	// IS being called — the CHAR-only path itself is the problem on iOS.
+	// Fix: send DOWN|UP|CHAR with a non-zero keyCode (like deleteBackward), carrying the
+	// unicode char in unicodeChar (union with keyCode). TextEdit::Key's DOWN branch hits
+	// default:break for normal chars (no-op), but its independent CHAR branch inserts the char.
 	for (NSUInteger i = 0; i < text.length; i++) {
 		unichar c = [text characterAtIndex:i];
 		KeyInput input{};
 		input.deviceId = DEVICE_ID_KEYBOARD;
-		input.flags = KeyInputFlags::CHAR;
-		input.unicodeChar = c;
+		input.flags = KeyInputFlags::DOWN | KeyInputFlags::UP | KeyInputFlags::CHAR;
+		input.unicodeChar = c;  // union with keyCode — gives a non-zero keyCode too
 		NativeKey(input);
 	}
 }
@@ -486,6 +485,7 @@ extern float g_safeInsetBottom;
 // deleteBackward 仍走 UIKeyInput 所以能工作，但字符输入不走 insertText:。
 
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
+	NSLog(@"[PPSSPP] pressesBegan: called, presses.count=%lu", (unsigned long)presses.count);
 	KeyboardPressesBegan(presses, event);
 }
 

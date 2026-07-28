@@ -440,10 +440,12 @@ void VulkanRenderLoop(IOSVulkanContext *graphicsContext, CAMetalLayer *metalLaye
 }
 
 - (void)insertText:(NSString *)text {
+	NSLog(@"[PPSSPP] MetalView.insertText: called, text='%@'", text);
 	[(PPSSPPBaseViewController *)sharedViewController insertText:text];
 }
 
 - (void)deleteBackward {
+	NSLog(@"[PPSSPP] MetalView.deleteBackward called");
 	[(PPSSPPBaseViewController *)sharedViewController deleteBackward];
 }
 

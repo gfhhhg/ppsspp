@@ -9,6 +9,7 @@
 #include "Common/System/NativeApp.h"
 #include "Common/System/Display.h"
 #include "Common/Log.h"
+#include "Common/UI/View.h"
 #include "Core/HLE/sceUsbCam.h"
 #include "Core/HLE/sceUsbGps.h"
 #include "Core/System.h"
@@ -417,6 +418,16 @@ extern float g_safeInsetBottom;
 // It's a bit limited but good enough.
 
 - (void)deleteBackward {
+	// Try to directly call TextEdit::Backspace() for the focused text edit.
+	UI::View *focused = UI::GetFocusedView();
+	if (focused) {
+		UI::TextEdit *edit = dynamic_cast<UI::TextEdit *>(focused);
+		if (edit) {
+			edit->Backspace();
+			return;
+		}
+	}
+	// Fallback: send through the event system.
 	KeyInput input{};
 	input.deviceId = DEVICE_ID_KEYBOARD;
 	input.flags = KeyInputFlags::DOWN | KeyInputFlags::UP;
@@ -426,8 +437,19 @@ extern float g_safeInsetBottom;
 }
 
 - (void)insertText:(NSString *)text {
+	// Try to directly call TextEdit::InsertAtCaret() for the focused text edit.
+	UI::View *focused = UI::GetFocusedView();
+	if (focused) {
+		UI::TextEdit *edit = dynamic_cast<UI::TextEdit *>(focused);
+		if (edit) {
+			std::string str([text UTF8String]);
+			edit->InsertAtCaret(str.c_str());
+			return;
+		}
+	}
+	// Fallback: send through the event system.
 	std::string str([text UTF8String]);
-	INFO_LOG(Log::System, "Chars: %s", str.c_str());
+	INFO_LOG(Log::System, "Chars: %s (fallback)", str.c_str());
 	SendKeyboardChars(str);
 }
 

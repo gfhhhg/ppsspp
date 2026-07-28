@@ -44,6 +44,8 @@ public:
 	void OnImportBrowse(UI::EventParams &params);
 	void OnEditCheatFile(UI::EventParams &params);
 	void OnDisableAll(UI::EventParams &params);
+	void OnEditCheat(int index);
+	void OnDeleteCheat(int index);
 
 	void update() override;
 	bool key(const KeyInput &input) override;
@@ -70,6 +72,9 @@ private:
 	enum { INDEX_ALL = -1 };
 	bool HasCheatWithName(const std::string &name);
 	bool RebuildCheatFile(int index);
+	bool RenameCheatInFile(int index, const std::string &newName);
+	bool RemoveCheatFromFile(int index);
+	bool AppendCheatToFile(const std::string &name, const std::string &code);
 
 	CWCheatEngine *engine_ = nullptr;
 	std::vector<CheatFileInfo> fileInfo_;

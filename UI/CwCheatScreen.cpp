@@ -16,6 +16,7 @@
 // https://github.com/hrydgard/ppsspp and http://www.ppsspp.org/.
 
 #include "ppsspp_config.h"
+#include <sstream>
 #include "ext/xxhash.h"
 #include "Common/UI/UI.h"
 #include "Common/UI/PopupScreens.h"
@@ -287,6 +288,9 @@ void CwCheatScreen::CreateContentViews(UI::ViewGroup *parent) {
 
 	rightColumn->Add(new ItemHeader(cw->T("Cheats")));
 
+	// Add an "Add Cheat" button at the top of the list.
+	rightColumn->Add(new Choice(cw->T("Add Cheat"), ImageID("I_PLUS")))->OnClick.Handle(this, &CwCheatScreen::OnAddCheat);
+
 	bool prevIsTitle = false;
 	View *prev = nullptr;
 	for (size_t i = 0; i < fileInfo_.size(); ++i) {
@@ -306,11 +310,27 @@ void CwCheatScreen::CreateContentViews(UI::ViewGroup *parent) {
 			if (!prevIsTitle) {
 				rightColumn->Add(new Spacer(8.0f));
 			}
-			CheckBox *checkBox = rightColumn->Add(new CheckBox(&fileInfo_[i].enabled, fileInfo_[i].name));
+
+			LinearLayout *row = rightColumn->Add(new LinearLayout(ORIENT_HORIZONTAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
+
+			CheckBox *checkBox = row->Add(new CheckBox(&fileInfo_[i].enabled, fileInfo_[i].name, "", new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT, 1.0f)));
 			checkBox->OnClick.Add([=](UI::EventParams &) {
 				OnCheckBox((int)i);
 			});
-			prev = checkBox;
+
+			// Edit button
+			Choice *editBtn = row->Add(new Choice(ImageID("I_EDIT_TEXT"), new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT, 0.0f)));
+			editBtn->OnClick.Add([this, i](UI::EventParams &) {
+				OnEditCheat((int)i);
+			});
+
+			// Delete button
+			Choice *deleteBtn = row->Add(new Choice(ImageID("I_TRASHCAN"), new LinearLayoutParams(ITEM_HEIGHT, ITEM_HEIGHT, 0.0f)));
+			deleteBtn->OnClick.Add([this, i](UI::EventParams &) {
+				OnDeleteCheat((int)i);
+			});
+
+			prev = row;
 			prevIsTitle = false;
 		}
 	}
@@ -378,8 +398,37 @@ void CwCheatScreen::OnDisableAll(UI::EventParams &params) {
 }
 
 void CwCheatScreen::OnAddCheat(UI::EventParams &params) {
-	TriggerFinish(DR_OK);
-	g_Config.bReloadCheats = true;
+	auto cw = GetI18NCategory(I18NCat::CWCHEATS);
+	auto di = GetI18NCategory(I18NCat::DIALOG);
+
+	// Step 1: Ask for the cheat name.
+	AskForInput(screenManager(), GetRequesterToken(), cheatList_, cw->T("Cheat Name"), [this, cw, di](const std::string &name, bool success) {
+		if (!success || name.empty())
+			return;
+
+		// Trim whitespace.
+		std::string trimmed = name;
+		trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
+		trimmed.erase(trimmed.find_last_not_of(" \t\r\n") + 1);
+		if (trimmed.empty())
+			return;
+
+		// Check for duplicate name.
+		if (HasCheatWithName(trimmed)) {
+			screenManager()->push(new UI::MessagePopupScreen(di->T("Warning"), cw->T("A cheat with this name already exists."), di->T("OK"), ""));
+			return;
+		}
+
+		// Step 2: Ask for the cheat code lines (in CWCheat format, e.g. _L 0x12345678 0x00000001).
+		AskForInput(screenManager(), GetRequesterToken(), cheatList_, cw->T("Enter cheat codes (_L lines)"), [this, trimmed](const std::string &code, bool success2) {
+			if (!success2 || code.empty())
+				return;
+
+			if (AppendCheatToFile(trimmed, code)) {
+				RecreateViews();
+			}
+		});
+	});
 }
 
 void CwCheatScreen::OnEditCheatFile(UI::EventParams &params) {
@@ -635,4 +684,224 @@ bool CwCheatScreen::RebuildCheatFile(int index) {
 	// Cheats will need to be reparsed now.
 	g_Config.bReloadCheats = true;
 	return true;
+}
+
+bool CwCheatScreen::RenameCheatInFile(int index, const std::string &newName) {
+ if (!engine_ || index < 0 || index >= (int)fileInfo_.size())
+  return false;
+
+ FILE *in = File::OpenCFile(engine_->CheatFilename(), "rt");
+ if (!in)
+  return false;
+
+ std::vector<std::string> lines;
+ for (; !feof(in); ) {
+  char temp[2048];
+  char *line = GetLineNoNewline(temp, sizeof(temp), in);
+  if (!line)
+   break;
+  lines.push_back(line);
+ }
+ fclose(in);
+
+ // Line numbers start with one, not zero.
+ size_t lineIndex = fileInfo_[index].lineNum - 1;
+ if (lines.size() <= lineIndex)
+  return false;
+
+ auto &line = lines[lineIndex];
+ bool isCheatDef = line.find("_C") != line.npos;
+ bool hasCheatName = !fileInfo_[index].name.empty() && line.find(fileInfo_[index].name) != line.npos;
+ if (!isCheatDef || !hasCheatName)
+  return false;
+
+ // Preserve _C0 or _C1 prefix, replace the name.
+ line = (fileInfo_[index].enabled ? "_C1 " : "_C0 ") + newName;
+
+ FILE *out = File::OpenCFile(engine_->CheatFilename(), "wt");
+ if (!out)
+  return false;
+
+ for (size_t i = 0; i < lines.size(); ++i) {
+  fprintf(out, "%s", lines[i].c_str());
+  if (i != lines.size() - 1)
+   fputc('\n', out);
+ }
+ fclose(out);
+
+ // Update hash to avoid unnecessary reload.
+ std::string str;
+ if (File::ReadTextFileToString(engine_->CheatFilename(), &str)) {
+  uint64_t newHash = XXH3_64bits(str.c_str(), str.size());
+  fileCheckHash_ = newHash;
+ }
+
+ g_Config.bReloadCheats = true;
+ return true;
+}
+
+void CwCheatScreen::OnEditCheat(int index) {
+ if (index < 0 || index >= (int)fileInfo_.size())
+  return;
+
+ auto cw = GetI18NCategory(I18NCat::CWCHEATS);
+ auto di = GetI18NCategory(I18NCat::DIALOG);
+
+ // Use AskForInput to show a text input dialog for the cheat name.
+ AskForInput(screenManager(), GetRequesterToken(), cheatList_, cw->T("Edit Cheat Name"), [this, index, cw](const std::string &text, bool success) {
+  if (!success || text.empty())
+   return;
+
+  // Check for duplicate name.
+  std::string trimmed = text;
+  // Trim whitespace.
+  trimmed.erase(0, trimmed.find_first_not_of(" \t\r\n"));
+  trimmed.erase(trimmed.find_last_not_of(" \t\r\n") + 1);
+  if (trimmed.empty())
+   return;
+
+  if (HasCheatWithName(trimmed)) {
+   // Name already exists, show a warning.
+   auto di2 = GetI18NCategory(I18NCat::DIALOG);
+   screenManager()->push(new UI::MessagePopupScreen(di2->T("Warning"), cw->T("A cheat with this name already exists."), di2->T("OK"), ""));
+   return;
+  }
+
+  if (RenameCheatInFile(index, trimmed)) {
+   fileInfo_[index].name = trimmed;
+   RecreateViews();
+  }
+ });
+}
+
+bool CwCheatScreen::RemoveCheatFromFile(int index) {
+ if (!engine_ || index < 0 || index >= (int)fileInfo_.size())
+  return false;
+
+ FILE *in = File::OpenCFile(engine_->CheatFilename(), "rt");
+ if (!in)
+  return false;
+
+ std::vector<std::string> lines;
+ for (; !feof(in); ) {
+  char temp[2048];
+  char *line = GetLineNoNewline(temp, sizeof(temp), in);
+  if (!line)
+   break;
+  lines.push_back(line);
+ }
+ fclose(in);
+
+ // Line numbers start with one, not zero.
+ size_t cheatLineIndex = fileInfo_[index].lineNum - 1;
+ if (lines.size() <= cheatLineIndex)
+  return false;
+
+ // Validate this is the right line.
+ auto &cheatLine = lines[cheatLineIndex];
+ bool isCheatDef = cheatLine.find("_C") != cheatLine.npos;
+ bool hasCheatName = !fileInfo_[index].name.empty() && cheatLine.find(fileInfo_[index].name) != cheatLine.npos;
+ if (!isCheatDef || !hasCheatName)
+  return false;
+
+ // Find the range of lines to remove: from the _C line through all _L lines until next _C or end.
+ size_t removeStart = cheatLineIndex;
+ size_t removeEnd = cheatLineIndex + 1; // Exclusive end.
+ for (size_t i = removeStart + 1; i < lines.size(); ++i) {
+  if (lines[i].size() >= 2 && lines[i][0] == '_' && lines[i][1] == 'L') {
+   removeEnd = i + 1;
+  } else {
+   break;
+  }
+ }
+
+ // Build new line list, removing the range.
+ std::vector<std::string> newLines;
+ for (size_t i = 0; i < lines.size(); ++i) {
+  if (i < removeStart || i >= removeEnd) {
+   newLines.push_back(lines[i]);
+  }
+ }
+
+ FILE *out = File::OpenCFile(engine_->CheatFilename(), "wt");
+ if (!out)
+  return false;
+
+ for (size_t i = 0; i < newLines.size(); ++i) {
+  fprintf(out, "%s", newLines[i].c_str());
+  if (i != newLines.size() - 1)
+   fputc('\n', out);
+ }
+ fclose(out);
+
+ // Update hash to avoid unnecessary reload.
+ std::string str;
+ if (File::ReadTextFileToString(engine_->CheatFilename(), &str)) {
+  uint64_t newHash = XXH3_64bits(str.c_str(), str.size());
+  fileCheckHash_ = newHash;
+ }
+
+ g_Config.bReloadCheats = true;
+ return true;
+}
+
+bool CwCheatScreen::AppendCheatToFile(const std::string &name, const std::string &code) {
+ if (!engine_)
+  return false;
+
+ FILE *out = File::OpenCFile(engine_->CheatFilename(), "at");
+ if (!out)
+  return false;
+
+ // Add a newline separator if the file is not empty.
+ fseek(out, 0, SEEK_END);
+ if (ftell(out) > 0) {
+  fputc('\n', out);
+ }
+
+ // Write the cheat header (disabled by default).
+ fprintf(out, "_C0 %s\n", name.c_str());
+
+ // Write the code lines the user entered.
+ // Split by newlines and write each line.
+ std::stringstream ss(code);
+ std::string line;
+ while (std::getline(ss, line)) {
+  // Trim whitespace from each line.
+  size_t start = line.find_first_not_of(" \t\r\n");
+  size_t end = line.find_last_not_of(" \t\r\n");
+  if (start != std::string::npos && end != std::string::npos) {
+   line = line.substr(start, end - start + 1);
+   fprintf(out, "%s\n", line.c_str());
+  }
+ }
+ fclose(out);
+
+ // Update hash to avoid unnecessary reload.
+ std::string str;
+ if (File::ReadTextFileToString(engine_->CheatFilename(), &str)) {
+  uint64_t newHash = XXH3_64bits(str.c_str(), str.size());
+  fileCheckHash_ = newHash;
+ }
+
+ g_Config.bReloadCheats = true;
+ return true;
+}
+
+void CwCheatScreen::OnDeleteCheat(int index) {
+ if (index < 0 || index >= (int)fileInfo_.size())
+  return;
+
+ auto cw = GetI18NCategory(I18NCat::CWCHEATS);
+ auto di = GetI18NCategory(I18NCat::DIALOG);
+
+ std::string message = StringFromFormat(cw->T_cstr("Delete cheat '%s'?"), fileInfo_[index].name.c_str());
+ screenManager()->push(new UI::MessagePopupScreen(di->T("Confirm"), message, di->T("Yes"), di->T("No"), [this, index](bool yes) {
+  if (!yes)
+   return;
+
+  if (RemoveCheatFromFile(index)) {
+   RecreateViews();
+  }
+ }));
 }

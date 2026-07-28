@@ -10,6 +10,7 @@
 #include "Common/System/Display.h"
 #include "Common/Log.h"
 #include "Common/UI/View.h"
+#include "Common/Data/Encoding/Utf8.h"
 #include "Core/HLE/sceUsbCam.h"
 #include "Core/HLE/sceUsbGps.h"
 #include "Core/System.h"
@@ -418,16 +419,6 @@ extern float g_safeInsetBottom;
 // It's a bit limited but good enough.
 
 - (void)deleteBackward {
-	// Try to directly call TextEdit::Backspace() for the focused text edit.
-	UI::View *focused = UI::GetFocusedView();
-	if (focused) {
-		UI::TextEdit *edit = dynamic_cast<UI::TextEdit *>(focused);
-		if (edit) {
-			edit->Backspace();
-			return;
-		}
-	}
-	// Fallback: send through the event system.
 	KeyInput input{};
 	input.deviceId = DEVICE_ID_KEYBOARD;
 	input.flags = KeyInputFlags::DOWN | KeyInputFlags::UP;
@@ -437,20 +428,19 @@ extern float g_safeInsetBottom;
 }
 
 - (void)insertText:(NSString *)text {
-	// Try to directly call TextEdit::InsertAtCaret() for the focused text edit.
-	UI::View *focused = UI::GetFocusedView();
-	if (focused) {
-		UI::TextEdit *edit = dynamic_cast<UI::TextEdit *>(focused);
-		if (edit) {
-			std::string str([text UTF8String]);
-			edit->InsertAtCaret(str.c_str());
-			return;
-		}
-	}
-	// Fallback: send through the event system.
+	if (!text || text.length == 0) return;
+
+	// 软键盘的字符输入直接走 NativeKey 的 KEY_CHAR 事件，让 PPSSPP 核心 UI 接收。
 	std::string str([text UTF8String]);
-	INFO_LOG(Log::System, "Chars: %s (fallback)", str.c_str());
-	SendKeyboardChars(str);
+	UTF8 chars(str);
+	while (!chars.end()) {
+		uint32_t codePoint = chars.next();
+		KeyInput input{};
+		input.deviceId = DEVICE_ID_KEYBOARD;
+		input.flags = KeyInputFlags::CHAR;
+		input.unicodeChar = codePoint;
+		NativeKey(input);
+	}
 }
 
 - (BOOL)hasText {

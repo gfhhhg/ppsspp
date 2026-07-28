@@ -370,8 +370,6 @@ bool System_GetPropertyBool(SystemProperty prop) {
 			return true;
 		case SYSPROP_HAS_OPEN_DIRECTORY:
 			return false;
-		case SYSPROP_HAS_TEXT_INPUT_DIALOG:
-			return true;
 		case SYSPROP_HAS_BACK_BUTTON:
 			return false;
 		case SYSPROP_HAS_ACCELEROMETER:
@@ -474,32 +472,6 @@ bool System_MakeRequest(SystemRequestType type, int requestId, const std::string
 			}
 		});
 		return true;
-
-	case SystemRequestType::INPUT_TEXT_MODAL:
-	{
-		// 弹出原生 UIAlertController 带 UITextField，避开 UIKeyInput 软键盘的兼容性问题。
-		// 用户在原生文本框里打字完成，点确定后整串字符串一次性回调给 PPSSPP。
-		dispatch_async(dispatch_get_main_queue(), ^{
-			NSString *title = [NSString stringWithUTF8String:param1.c_str()];
-			NSString *defaultValue = [NSString stringWithUTF8String:param2.c_str()];
-			UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:@"" preferredStyle:UIAlertControllerStyleAlert];
-			[alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-				textField.text = defaultValue;
-				textField.clearButtonMode = UITextFieldViewModeWhileEditing;
-			}];
-			UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-				NSString *text = alert.textFields.firstObject.text;
-				g_requestManager.PostSystemSuccess(requestId, text.UTF8String ?: "");
-			}];
-			UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
-				g_requestManager.PostSystemFailure(requestId);
-			}];
-			[alert addAction:okAction];
-			[alert addAction:cancelAction];
-			[sharedViewController presentViewController:alert animated:YES completion:nil];
-		});
-		return true;
-	}
 
 	case SystemRequestType::EXIT_APP:
 		// NOTE: on iOS, this is considered a crash and not a valid way to exit.

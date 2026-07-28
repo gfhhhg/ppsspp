@@ -10,5 +10,5 @@
 @end
 
 /** The Metal-compatibile view. */
-@interface PPSSPPMetalView : UIView
+@interface PPSSPPMetalView : UIView <UIKeyInput>
 @end

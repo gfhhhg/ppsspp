@@ -9,8 +9,6 @@
 #include "Common/System/NativeApp.h"
 #include "Common/System/Display.h"
 #include "Common/Log.h"
-#include "Common/UI/View.h"
-#include "Common/Data/Encoding/Utf8.h"
 #include "Core/HLE/sceUsbCam.h"
 #include "Core/HLE/sceUsbGps.h"
 #include "Core/System.h"
@@ -21,8 +19,6 @@
 	LocationHelper *locationHelper;
 	ICadeTracker g_iCadeTracker;
 	TouchTracker g_touchTracker;
-	UITextField *hiddenTextField_;
-	NSString *previousTextFieldText_;
 }
 
 @property (strong, nonatomic) NSOperationQueue *accelerometerQueue;
@@ -430,19 +426,9 @@ extern float g_safeInsetBottom;
 }
 
 - (void)insertText:(NSString *)text {
-	if (!text || text.length == 0) return;
-
-	// 软键盘的字符输入直接走 NativeKey 的 KEY_CHAR 事件，让 PPSSPP 核心 UI 接收。
 	std::string str([text UTF8String]);
-	UTF8 chars(str);
-	while (!chars.end()) {
-		uint32_t codePoint = chars.next();
-		KeyInput input{};
-		input.deviceId = DEVICE_ID_KEYBOARD;
-		input.flags = KeyInputFlags::CHAR;
-		input.unicodeChar = codePoint;
-		NativeKey(input);
-	}
+	INFO_LOG(Log::System, "Chars: %s", str.c_str());
+	SendKeyboardChars(str);
 }
 
 - (BOOL)hasText {
@@ -451,81 +437,16 @@ extern float g_safeInsetBottom;
 
 - (void)showKeyboard {
 	dispatch_async(dispatch_get_main_queue(), ^{
-		INFO_LOG(Log::System, "showKeyboard - creating hidden UITextField");
-		if (!hiddenTextField_) {
-			hiddenTextField_ = [[UITextField alloc] initWithFrame:CGRectZero];
-			hiddenTextField_.hidden = YES;
-			// Avoid showing any toolbar/assistant bar.
-			hiddenTextField_.inputAccessoryView = [[UIView alloc] initWithFrame:CGRectZero];
-			[self.view addSubview:hiddenTextField_];
-			[hiddenTextField_ addTarget:self action:@selector(textFieldDidChange:) forControlEvents:UIControlEventEditingChanged];
-		}
-		previousTextFieldText_ = hiddenTextField_.text;
-		[hiddenTextField_ becomeFirstResponder];
+		INFO_LOG(Log::System, "becomeFirstResponder");
+		[self becomeFirstResponder];
 	});
 }
 
 - (void)hideKeyboard {
 	dispatch_async(dispatch_get_main_queue(), ^{
-		INFO_LOG(Log::System, "hideKeyboard - removing hidden UITextField");
-		if (hiddenTextField_) {
-			[hiddenTextField_ resignFirstResponder];
-			[hiddenTextField_ removeFromSuperview];
-			hiddenTextField_ = nil;
-			previousTextFieldText_ = nil;
-		}
-		// Also resign self for backup.
+		INFO_LOG(Log::System, "resignFirstResponder");
 		[self resignFirstResponder];
 	});
-}
-
-// UITextField editing changed callback.
-// Tracks text changes and directly forwards them to the focused PPSSPP TextEdit.
-- (void)textFieldDidChange:(UITextField *)textField {
-	NSString *currentText = textField.text;
-	NSString *previousText = previousTextFieldText_ ?: @"";
-	
-	// Handle deletion: send BACKSPACE for each removed character.
-	while (currentText.length < previousText.length) {
-		UI::View *focused = UI::GetFocusedView();
-		if (focused) {
-			UI::TextEdit *edit = dynamic_cast<UI::TextEdit *>(focused);
-			if (edit) {
-				edit->Backspace();
-			}
-		}
-		previousText = [previousText substringToIndex:previousText.length - 1];
-	}
-	
-	// Handle insertion: send each new character.
-	if (currentText.length > previousText.length) {
-		NSString *newChars = [currentText substringFromIndex:previousText.length];
-		for (NSUInteger i = 0; i < newChars.length; i++) {
-			unichar c = [newChars characterAtIndex:i];
-			char buf[8] = {};
-			// Convert unichar to UTF-8 string.
-			if (c < 0x80) {
-				buf[0] = (char)c;
-			} else if (c < 0x800) {
-				buf[0] = 0xC0 | (c >> 6);
-				buf[1] = 0x80 | (c & 0x3F);
-			} else {
-				buf[0] = 0xE0 | (c >> 12);
-				buf[1] = 0x80 | ((c >> 6) & 0x3F);
-				buf[2] = 0x80 | (c & 0x3F);
-			}
-			
-			UI::View *focused = UI::GetFocusedView();
-			if (focused) {
-				UI::TextEdit *edit = dynamic_cast<UI::TextEdit *>(focused);
-				if (edit) {
-					edit->InsertAtCaret(buf);
-				}
-			}
-		}
-	}
-	
-	previousTextFieldText_ = currentText;
 }
 
 - (BOOL)canBecomeFirstResponder {

@@ -429,38 +429,22 @@ extern float g_safeInsetBottom;
 - (void)insertText:(NSString *)text {
 	if (!text || text.length == 0) return;
 
-	// PPSSPP 核心引擎校验：keyCode == 0 (NKCODE_UNKNOWN) 且没 DOWN flag 的事件会被丢弃。
-	// 所以必须同时设 DOWN | CHAR flag，并为字符赋予非 0 的 keyCode。
-	// 字母/数字映射为对应 NKCODE；其他字符(汉字/符号等)用 NKCODE_SPACE 占位，
-	// 引擎看到有效 keyCode 和 CHAR flag 后会把 unicodeChar 写入文本框。
-	std::string str([text UTF8String]);
-	UTF8 chars(str);
-	while (!chars.end()) {
-		uint32_t codePoint = chars.next();
-
-		KeyInput keyDown{};
-		keyDown.deviceId = DEVICE_ID_KEYBOARD;
-		keyDown.flags = KeyInputFlags::DOWN | KeyInputFlags::CHAR;
-		keyDown.unicodeChar = codePoint;
-
-		if (codePoint >= 'a' && codePoint <= 'z') {
-			keyDown.keyCode = (InputKeyCode)(NKCODE_A + (codePoint - 'a'));
-		} else if (codePoint >= 'A' && codePoint <= 'Z') {
-			keyDown.keyCode = (InputKeyCode)(NKCODE_A + (codePoint - 'A'));
-		} else if (codePoint >= '0' && codePoint <= '9') {
-			keyDown.keyCode = (InputKeyCode)(NKCODE_0 + (codePoint - '0'));
-		} else if (codePoint == ' ') {
-			keyDown.keyCode = NKCODE_SPACE;
-		} else {
-			// 汉字/符号等非 ASCII 字符：给非 0 占位 keyCode 避免被丢弃。
-			keyDown.keyCode = NKCODE_SPACE;
-		}
-		NativeKey(keyDown);
-
-		// 紧随其后发送 KEY_UP 事件释放按键。
-		KeyInput keyUp = keyDown;
-		keyUp.flags = KeyInputFlags::UP;
-		NativeKey(keyUp);
+	// Key observation: deleteBackward works with DOWN|UP + keyCode=NKCODE_DEL.
+	// TextEdit::Key's CHAR branch (line 1502) checks: input.keyCode >= 0x20.
+	// No DOWN flag required, no keyCode != 0 check.
+	// The union means setting unicodeChar makes keyCode readable as the same value.
+	// So original SendKeyboardChars (CHAR + unicodeChar=codePoint) should work.
+	// 
+	// But it doesn't → means insertText: is probably NOT being called by iOS 16.
+	// The actual iOS 16 path for system keyboard chars is pressesBegan: / pressesEnded.
+	// So we must un-#if the pressesBegan: handler to receive key events.
+	for (NSUInteger i = 0; i < text.length; i++) {
+		unichar c = [text characterAtIndex:i];
+		KeyInput input{};
+		input.deviceId = DEVICE_ID_KEYBOARD;
+		input.flags = KeyInputFlags::CHAR;
+		input.unicodeChar = c;
+		NativeKey(input);
 	}
 }
 
@@ -497,7 +481,9 @@ extern float g_safeInsetBottom;
 }
 
 // See PPSSPPUIApplication.mm for the other method
-#if PPSSPP_PLATFORM(IOS_APP_STORE)
+// iOS 13+ 软键盘和硬键盘都走 pressesBegan:/pressesEnded: 而非 UIKeyInput。
+// 开源版原本用 #if PPSSPP_PLATFORM(IOS_APP_STORE) 包裹导致软键盘字符被丢弃，
+// deleteBackward 仍走 UIKeyInput 所以能工作，但字符输入不走 insertText:。
 
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
 	KeyboardPressesBegan(presses, event);
@@ -511,7 +497,6 @@ extern float g_safeInsetBottom;
 	KeyboardPressesEnded(presses, event);
 }
 
-#endif
 #pragma mark - Status Bar Control
 
 // iOS calls this to determine whether to hide the status bar

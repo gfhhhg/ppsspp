@@ -426,9 +426,20 @@ extern float g_safeInsetBottom;
 }
 
 - (void)insertText:(NSString *)text {
-	std::string str([text UTF8String]);
-	INFO_LOG(Log::System, "Chars: %s", str.c_str());
-	SendKeyboardChars(str);
+	if (!text || text.length == 0) return;
+	// deleteBackward 用 DOWN|UP flag 工作，证明 NativeKey → ScreenManager::key →
+	// UIScreen::UnsyncKey → 异步队列 → UIScreen::key → KeyEvent → ViewGroup::Key →
+	// TextEdit::Key → HasFocus() 整条路径都通。
+	// TextEdit::Key 处理字符插入只在 KeyInputFlags::CHAR 分支（第 1502 行），
+	// 不要求 DOWN flag。所以这里用 CHAR flag 逐字符发送。
+	for (NSUInteger i = 0; i < text.length; i++) {
+		unichar c = [text characterAtIndex:i];
+		KeyInput input{};
+		input.deviceId = DEVICE_ID_KEYBOARD;
+		input.flags = KeyInputFlags::CHAR;
+		input.unicodeChar = c;
+		NativeKey(input);
+	}
 }
 
 - (BOOL)hasText {
@@ -464,7 +475,9 @@ extern float g_safeInsetBottom;
 }
 
 // See PPSSPPUIApplication.mm for the other method
-#if PPSSPP_PLATFORM(IOS_APP_STORE)
+// iOS 14+ 软键盘字符输入走 pressesBegan: 而非 UIKeyInput 的 insertText:。
+// 开源版原本用 #if PPSSPP_PLATFORM(IOS_APP_STORE) 包裹 pressesBegan: 导致软键盘字符被丢弃，
+// 但 deleteBackward 仍走 UIKeyInput 协议工作。这里去掉 #if 让开源版也编译这些方法。
 
 - (void)pressesBegan:(NSSet<UIPress *> *)presses withEvent:(UIPressesEvent *)event {
 	KeyboardPressesBegan(presses, event);
@@ -478,7 +491,6 @@ extern float g_safeInsetBottom;
 	KeyboardPressesEnded(presses, event);
 }
 
-#endif
 #pragma mark - Status Bar Control
 
 // iOS calls this to determine whether to hide the status bar
